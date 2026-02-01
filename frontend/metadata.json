@@ -1,0 +1,9 @@
+
+{
+  "name": "Survey Lion v3",
+  "description": "A comprehensive internal survey system with advanced features like skip logic, lottery, and delegation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
