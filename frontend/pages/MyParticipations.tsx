@@ -13,15 +13,20 @@ const MyParticipations: React.FC<MyParticipationsProps> = ({ user, navigate }) =
   const [responses, setResponses] = useState<(SurveyResponse & { survey?: Survey })[]>([]);
 
   useEffect(() => {
-    const allResponses = StorageService.getResponses();
-    const userResponses = allResponses.filter(r => r.userId === user.id);
-    
-    const enriched = userResponses.map(r => ({
-      ...r,
-      survey: StorageService.getSurveyById(r.surveyId)
-    }));
-    
-    setResponses(enriched);
+    // FIX: StorageService methods are asynchronous. Await the results within an async function.
+    const loadData = async () => {
+      const allResponses = await StorageService.getResponses();
+      const userResponses = allResponses.filter(r => r.userId === user.id);
+      
+      // Enriched with survey titles/descriptions
+      const enriched = await Promise.all(userResponses.map(async r => ({
+        ...r,
+        survey: await StorageService.getSurveyById(r.surveyId)
+      })));
+      
+      setResponses(enriched);
+    };
+    loadData();
   }, [user.id]);
 
   return (

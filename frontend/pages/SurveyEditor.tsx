@@ -38,20 +38,23 @@ const SurveyEditor: React.FC<SurveyEditorProps> = ({ user, surveyId, navigate })
   const lastSavedRef = useRef(Date.now());
 
   useEffect(() => {
-    if (surveyId) {
-      const existing = StorageService.getSurveyById(surveyId);
-      if (existing) setSurvey(existing);
-    }
+    // FIX: StorageService.getSurveyById is asynchronous.
+    const loadSurvey = async () => {
+      if (surveyId) {
+        const existing = await StorageService.getSurveyById(surveyId);
+        if (existing) setSurvey(existing);
+      }
+    };
+    loadSurvey();
   }, [surveyId]);
 
-  const save = useCallback(() => {
+  // FIX: Make save async to await StorageService.saveSurvey
+  const save = useCallback(async () => {
     if (!survey.title) return;
     setSaving(true);
-    StorageService.saveSurvey(survey);
-    setTimeout(() => {
-      setSaving(false);
-      lastSavedRef.current = Date.now();
-    }, 500);
+    await StorageService.saveSurvey(survey);
+    setSaving(false);
+    lastSavedRef.current = Date.now();
   }, [survey]);
 
   useEffect(() => {
@@ -143,10 +146,11 @@ const SurveyEditor: React.FC<SurveyEditorProps> = ({ user, surveyId, navigate })
             <span className="ml-2">Preview</span>
           </button>
           <button 
-            onClick={() => {
+            onClick={async () => {
+              // FIX: Await saveSurvey when publishing
               const updated = { ...survey, status: SurveyStatus.PUBLISHED };
               setSurvey(updated);
-              StorageService.saveSurvey(updated);
+              await StorageService.saveSurvey(updated);
               navigate('dashboard');
             }}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"

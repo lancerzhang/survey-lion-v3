@@ -20,47 +20,53 @@ const SurveyViewer: React.FC<SurveyViewerProps> = ({ user, surveyId, navigate, p
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const s = StorageService.getSurveyById(surveyId);
-    if (s) {
-      if (!preview) {
-        const now = new Date();
-        
-        // Lifecycle Check
-        if (s.status === SurveyStatus.DRAFT) {
-          setError(`This survey is still a draft and is not open to participants.`);
-          return;
-        }
-        if (s.status === SurveyStatus.ARCHIVED) {
-          setError(`This survey has been archived.`);
-          return;
-        }
-        if (s.status === SurveyStatus.CLOSED) {
-          setError(`This survey is closed.`);
-          return;
-        }
-
-        // 1. Time Checks
-        if (s.config.startTime && new Date(s.config.startTime) > now) {
-          setError(`This survey hasn't started yet. It will open on ${new Date(s.config.startTime).toLocaleString()}.`);
-          return;
-        }
-        if (s.config.endTime && new Date(s.config.endTime) < now) {
-          setError(`This survey is closed. It ended on ${new Date(s.config.endTime).toLocaleString()}.`);
-          return;
-        }
-
-        // 2. Participant Limit Check
-        if (s.config.maxParticipants) {
-          const count = StorageService.getResponsesBySurveyId(s.id).length;
-          if (count >= s.config.maxParticipants) {
-            setError(`This survey has reached its maximum participant limit of ${s.config.maxParticipants}.`);
+    // FIX: StorageService methods are asynchronous. Await the results within an async function.
+    const loadSurvey = async () => {
+      const s = await StorageService.getSurveyById(surveyId);
+      if (s) {
+        if (!preview) {
+          const now = new Date();
+          
+          // Lifecycle Check
+          if (s.status === SurveyStatus.DRAFT) {
+            setError(`This survey is still a draft and is not open to participants.`);
             return;
           }
-        }
-      }
+          if (s.status === SurveyStatus.ARCHIVED) {
+            setError(`This survey has been archived.`);
+            return;
+          }
+          if (s.status === SurveyStatus.CLOSED) {
+            setError(`This survey is closed.`);
+            return;
+          }
 
-      setSurvey(s);
-    }
+          // 1. Time Checks
+          if (s.config.startTime && new Date(s.config.startTime) > now) {
+            setError(`This survey hasn't started yet. It will open on ${new Date(s.config.startTime).toLocaleString()}.`);
+            return;
+          }
+          if (s.config.endTime && new Date(s.config.endTime) < now) {
+            setError(`This survey is closed. It ended on ${new Date(s.config.endTime).toLocaleString()}.`);
+            return;
+          }
+
+          // 2. Participant Limit Check
+          if (s.config.maxParticipants) {
+            // FIX: Await the response list for the survey
+            const responses = await StorageService.getResponsesBySurveyId(s.id);
+            const count = responses.length;
+            if (count >= s.config.maxParticipants) {
+              setError(`This survey has reached its maximum participant limit of ${s.config.maxParticipants}.`);
+              return;
+            }
+          }
+        }
+
+        setSurvey(s);
+      }
+    };
+    loadSurvey();
   }, [surveyId, preview]);
 
   if (error) {
@@ -105,7 +111,8 @@ const SurveyViewer: React.FC<SurveyViewerProps> = ({ user, surveyId, navigate, p
     }
   };
 
-  const handleSubmit = () => {
+  // FIX: Make handleSubmit async to await survey response saving
+  const handleSubmit = async () => {
     if (preview) {
       alert("This is a preview. No data will be saved.");
       setSubmitted(true);
@@ -130,7 +137,7 @@ const SurveyViewer: React.FC<SurveyViewerProps> = ({ user, surveyId, navigate, p
       answers: finalAnswers,
       submittedAt: Date.now()
     };
-    StorageService.saveResponse(response, survey.config.allowMultipleSubmissions);
+    await StorageService.saveResponse(response, survey.config.allowMultipleSubmissions);
     setSubmitted(true);
   };
 

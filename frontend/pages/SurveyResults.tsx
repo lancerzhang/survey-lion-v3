@@ -20,9 +20,14 @@ const SurveyResults: React.FC<SurveyResultsProps> = ({ user, surveyId, navigate 
   const [isDrawing, setIsDrawing] = useState(false);
 
   useEffect(() => {
-    const s = StorageService.getSurveyById(surveyId);
-    if (s) setSurvey(s);
-    setResponses(StorageService.getResponsesBySurveyId(surveyId));
+    // FIX: Await asynchronous survey and response data
+    const loadData = async () => {
+      const s = await StorageService.getSurveyById(surveyId);
+      if (s) setSurvey(s);
+      const resps = await StorageService.getResponsesBySurveyId(surveyId);
+      setResponses(resps);
+    };
+    loadData();
   }, [surveyId]);
 
   const stats = useMemo(() => {

@@ -12,36 +12,52 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
   const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [responseCounts, setResponseCounts] = useState<Record<string, number>>({});
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [filter, setFilter] = useState<'ALL' | SurveyStatus>('ALL');
 
   useEffect(() => {
-    const all = StorageService.getSurveys();
-    const delegations = StorageService.getDelegationsForUser(user.id);
-    
-    const accessible = all.filter(s => 
-      s.ownerId === user.id || 
-      user.role === 'ADMIN' ||
-      delegations.some(d => d.ownerId === s.ownerId && (!d.surveyId || d.surveyId === s.id))
-    );
-    
-    setSurveys(accessible.sort((a, b) => b.updatedAt - a.updatedAt));
+    // FIX: StorageService methods are asynchronous. Await the results within an async function.
+    const fetchData = async () => {
+      const all = await StorageService.getSurveys();
+      const allResponses = await StorageService.getResponses();
+      const delegations = StorageService.getDelegationsForUser(user.id);
+      
+      // Calculate response counts for all surveys
+      const counts: Record<string, number> = {};
+      allResponses.forEach(r => {
+        counts[r.surveyId] = (counts[r.surveyId] || 0) + 1;
+      });
+      setResponseCounts(counts);
+
+      const accessible = all.filter(s => 
+        s.ownerId === user.id || 
+        user.role === 'ADMIN' ||
+        delegations.some(d => d.ownerId === s.ownerId && (!d.surveyId || d.surveyId === s.id))
+      );
+      
+      setSurveys(accessible.sort((a, b) => b.updatedAt - a.updatedAt));
+    };
+    fetchData();
   }, [user.id, refresh]);
 
-  const handleDelete = (id: string) => {
+  // FIX: Make handleDelete async to await survey deletion
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this survey? All responses will be lost.')) {
-      StorageService.deleteSurvey(id);
+      await StorageService.deleteSurvey(id);
       setSurveys(prev => prev.filter(s => s.id !== id));
     }
   };
 
-  const handleArchive = (survey: Survey) => {
+  // FIX: Make handleArchive async to await survey saving
+  const handleArchive = async (survey: Survey) => {
     const updated = { ...survey, status: SurveyStatus.ARCHIVED };
-    StorageService.saveSurvey(updated);
+    await StorageService.saveSurvey(updated);
     setSurveys(prev => prev.map(s => s.id === survey.id ? updated : s));
   };
 
-  const createFromTemplate = (template?: Partial<Survey>) => {
+  // FIX: Make createFromTemplate async to await survey saving
+  const createFromTemplate = async (template?: Partial<Survey>) => {
     const newId = 's' + Date.now();
     const newSurvey: Survey = {
       id: newId,
@@ -57,7 +73,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
-    StorageService.saveSurvey(newSurvey);
+    await StorageService.saveSurvey(newSurvey);
     navigate('editor', { id: newId });
   };
 
@@ -167,7 +183,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
 
               <div className="flex items-center justify-between pt-4 border-t border-gray-50">
                 <div className="text-xs text-gray-400">
-                  {StorageService.getResponsesBySurveyId(survey.id).length} Responses
+                  {/* FIX: Use cached response counts from state instead of calling async method synchronously */}
+                  {responseCounts[survey.id] || 0} Responses
                 </div>
                 
                 <div className="flex space-x-1">

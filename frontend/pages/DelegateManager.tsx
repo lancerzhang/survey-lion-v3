@@ -19,8 +19,13 @@ const DelegateManager: React.FC<DelegateManagerProps> = ({ user, navigate }) => 
   const [permissions, setPermissions] = useState<('CREATE' | 'EDIT' | 'VIEW_RESULTS')[]>(['VIEW_RESULTS']);
 
   useEffect(() => {
-    setDelegations(StorageService.getDelegations().filter(d => d.ownerId === user.id));
-    setSurveys(StorageService.getSurveys().filter(s => s.ownerId === user.id));
+    // FIX: StorageService.getSurveys is asynchronous.
+    const loadData = async () => {
+      setDelegations(StorageService.getDelegations().filter(d => d.ownerId === user.id));
+      const allSurveys = await StorageService.getSurveys();
+      setSurveys(allSurveys.filter(s => s.ownerId === user.id));
+    };
+    loadData();
   }, [user.id]);
 
   const handleAdd = () => {
