@@ -6,7 +6,13 @@ import java.util.List;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "surveys")
+@Table(
+    name = "surveys",
+    indexes = {
+        @Index(name = "idx_surveys_owner_status_updated", columnList = "owner_id,status,updated_at"),
+        @Index(name = "idx_surveys_status_updated", columnList = "status,updated_at")
+    }
+)
 @Data
 @Builder
 @NoArgsConstructor

@@ -15,31 +15,62 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
   const [responseCounts, setResponseCounts] = useState<Record<string, number>>({});
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [filter, setFilter] = useState<'ALL' | SurveyStatus>('ALL');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(9);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     // FIX: StorageService methods are asynchronous. Await the results within an async function.
     const fetchData = async () => {
-      const all = await StorageService.getSurveys();
-      const allResponses = await StorageService.getResponses();
+      setLoading(true);
       const delegations = StorageService.getDelegationsForUser(user.id);
-      
-      // Calculate response counts for all surveys
-      const counts: Record<string, number> = {};
-      allResponses.forEach(r => {
-        counts[r.surveyId] = (counts[r.surveyId] || 0) + 1;
+      const globalOwnerIds = delegations.filter(d => !d.surveyId).map(d => d.ownerId);
+      const ownerIds = Array.from(new Set([user.id, ...globalOwnerIds]));
+      const scopedSurveyIds = delegations
+        .map(d => d.surveyId)
+        .filter((id): id is string => Boolean(id));
+      const statuses = filter === 'ALL' ? undefined : [filter];
+      const result = await StorageService.getSurveysPage({
+        ownerIds: user.role === 'ADMIN' ? undefined : ownerIds,
+        ids: user.role === 'ADMIN' ? undefined : scopedSurveyIds,
+        statuses,
+        page,
+        size: pageSize
       });
+
+      const accessible = result.items;
+
+      if (result.totalPages === 0 && page !== 0) {
+        setPage(0);
+        setLoading(false);
+        return;
+      }
+
+      if (result.totalPages > 0 && page >= result.totalPages) {
+        setPage(Math.max(0, result.totalPages - 1));
+        setLoading(false);
+        return;
+      }
+
+      setTotalPages(result.totalPages);
+      setTotalElements(result.totalElements);
+
+      const counts = accessible.length > 0
+        ? await StorageService.getResponseCountsBySurveyIds(accessible.map(s => s.id))
+        : {};
       setResponseCounts(counts);
 
-      const accessible = all.filter(s => 
-        s.ownerId === user.id || 
-        user.role === 'ADMIN' ||
-        delegations.some(d => d.ownerId === s.ownerId && (!d.surveyId || d.surveyId === s.id))
-      );
-      
       setSurveys(accessible.sort((a, b) => b.updatedAt - a.updatedAt));
+      setLoading(false);
     };
     fetchData();
-  }, [user.id, refresh]);
+  }, [user.id, refresh, filter, page, pageSize]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [filter, user.id, refresh, pageSize]);
 
   // FIX: Make handleDelete async to await survey deletion
   const handleDelete = async (id: string) => {
@@ -80,10 +111,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
     await StorageService.saveSurvey(newSurvey);
     navigate('editor', { id: newId });
   };
-
-  const filteredSurveys = filter === 'ALL' 
-    ? surveys 
-    : surveys.filter(s => s.status === filter);
 
   const stripHtml = (html: string) => {
     const tmp = document.createElement("DIV");
@@ -164,12 +191,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredSurveys.length === 0 ? (
+        {surveys.length === 0 ? (
           <div className="col-span-full py-20 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-white">
-            <h3 className="text-lg font-medium text-gray-900">No surveys matching filters</h3>
+            <h3 className="text-lg font-medium text-gray-900">
+              {loading ? 'Loading surveys...' : 'No surveys matching filters'}
+            </h3>
           </div>
         ) : (
-          filteredSurveys.map(survey => (
+          surveys.map(survey => (
             <div key={survey.id} className={`bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all group p-6 flex flex-col h-full ${survey.status === SurveyStatus.ARCHIVED ? 'opacity-60' : ''}`}>
               <div className="flex justify-between items-start mb-4">
                 <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider ${
@@ -236,6 +265,43 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
             </div>
           ))
         )}
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="text-xs text-gray-500">
+          {totalElements === 0
+            ? 'No surveys'
+            : `Showing ${page * pageSize + 1}-${Math.min(totalElements, (page + 1) * pageSize)} of ${totalElements}`}
+        </div>
+        <div className="flex items-center space-x-2">
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1 text-gray-600"
+            title="Page size"
+          >
+            {[6, 9, 12, 18].map(size => (
+              <option key={size} value={size}>{size} / page</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page <= 0 || loading}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <span className="text-xs text-gray-500">
+            Page {totalPages === 0 ? 0 : page + 1} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1 || loading}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

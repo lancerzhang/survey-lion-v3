@@ -22,8 +22,8 @@ const DelegateManager: React.FC<DelegateManagerProps> = ({ user, navigate }) => 
     // FIX: StorageService.getSurveys is asynchronous.
     const loadData = async () => {
       setDelegations(StorageService.getDelegations().filter(d => d.ownerId === user.id));
-      const allSurveys = await StorageService.getSurveys();
-      setSurveys(allSurveys.filter(s => s.ownerId === user.id));
+      const allSurveys = await StorageService.getSurveys({ ownerIds: [user.id], allPages: true });
+      setSurveys(allSurveys);
     };
     loadData();
   }, [user.id]);

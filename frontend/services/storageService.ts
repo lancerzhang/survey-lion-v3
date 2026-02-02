@@ -3,6 +3,104 @@ import { Survey, SurveyResponse, Delegation, LotteryResult, SurveyStatus } from 
 
 const API_BASE = 'http://localhost:8080/api';
 
+type QueryValue = string | number | boolean | string[] | undefined | null;
+
+type PageResult<T> = {
+  items: T[];
+  page: number;
+  size: number;
+  totalPages: number;
+  totalElements: number;
+  last: boolean;
+};
+
+const appendQuery = (url: string, params: Record<string, QueryValue>): string => {
+  const [base, existing] = url.split('?');
+  const search = new URLSearchParams(existing ?? '');
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      if (value.length === 0) return;
+      search.set(key, value.join(','));
+      return;
+    }
+    search.set(key, String(value));
+  });
+  const qs = search.toString();
+  return qs ? `${base}?${qs}` : base;
+};
+
+const extractContent = <T>(data: any): T[] => {
+  if (Array.isArray(data)) return data as T[];
+  if (Array.isArray(data?.content)) return data.content as T[];
+  return [];
+};
+
+const normalizePageResult = <T>(data: any, page: number, size: number): PageResult<T> => {
+  if (Array.isArray(data)) {
+    const totalElements = data.length;
+    const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / size);
+    const start = page * size;
+    const items = data.slice(start, start + size);
+    return {
+      items,
+      page,
+      size,
+      totalPages,
+      totalElements,
+      last: totalPages === 0 || page >= totalPages - 1
+    };
+  }
+
+  const items = extractContent<T>(data);
+  const totalElements = typeof data?.totalElements === 'number' ? data.totalElements : items.length;
+  const totalPages = typeof data?.totalPages === 'number'
+    ? data.totalPages
+    : (totalElements === 0 ? 0 : Math.ceil(totalElements / size));
+  const pageNumber = typeof data?.number === 'number' ? data.number : page;
+  const sizeOut = typeof data?.size === 'number' ? data.size : size;
+  const last = typeof data?.last === 'boolean' ? data.last : (totalPages === 0 || pageNumber >= totalPages - 1);
+  return {
+    items,
+    page: pageNumber,
+    size: sizeOut,
+    totalPages,
+    totalElements,
+    last
+  };
+};
+
+const fetchPage = async <T>(url: string): Promise<T[]> => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('API Unavailable');
+  const data = await response.json();
+  return extractContent<T>(data);
+};
+
+const fetchPageResult = async <T>(url: string, page: number, size: number): Promise<PageResult<T>> => {
+  const response = await fetch(appendQuery(url, { page, size }));
+  if (!response.ok) throw new Error('API Unavailable');
+  const data = await response.json();
+  return normalizePageResult<T>(data, page, size);
+};
+
+const fetchAllPages = async <T>(url: string, pageSize: number): Promise<T[]> => {
+  let page = 0;
+  const results: T[] = [];
+  while (true) {
+    const pagedUrl = appendQuery(url, { page, size: pageSize });
+    const response = await fetch(pagedUrl);
+    if (!response.ok) throw new Error('API Unavailable');
+    const data = await response.json();
+    const content = extractContent<T>(data);
+    results.push(...content);
+    if (Array.isArray(data)) break;
+    if (data?.last === true || content.length === 0) break;
+    page += 1;
+  }
+  return results;
+};
+
 const normalizeLocalDateTime = (value: string): string => {
   const trimmed = value.replace('Z', '');
   if (trimmed.length === 16) return `${trimmed}:00`;
@@ -118,16 +216,74 @@ const mapResponseToApi = (response: SurveyResponse) => ({
  */
 export const StorageService = {
   // Surveys
-  getSurveys: async (): Promise<Survey[]> => {
+  getSurveys: async (query: {
+    ownerIds?: string[];
+    statuses?: (SurveyStatus | string)[];
+    ids?: string[];
+    pageSize?: number;
+    allPages?: boolean;
+  } = {}): Promise<Survey[]> => {
     try {
-      const response = await fetch(`${API_BASE}/surveys`);
-      if (!response.ok) throw new Error('API Unavailable');
-      const data = await response.json();
-      return Array.isArray(data) ? data.map(mapSurveyFromApi) : [];
+      const baseUrl = appendQuery(`${API_BASE}/surveys`, {
+        ownerIds: query.ownerIds,
+        statuses: query.statuses,
+        ids: query.ids
+      });
+      const pageSize = query.pageSize ?? 200;
+      const data = query.allPages
+        ? await fetchAllPages<any>(baseUrl, pageSize)
+        : await fetchPage<any>(appendQuery(baseUrl, { page: 0, size: pageSize }));
+      return data.map(mapSurveyFromApi);
     } catch (e) {
       // Fallback to localStorage for this demo environment
       const data = localStorage.getItem('slv3_surveys');
-      return data ? JSON.parse(data) : [];
+      let surveys: Survey[] = data ? JSON.parse(data) : [];
+      if (query.ownerIds?.length) {
+        surveys = surveys.filter(s => query.ownerIds!.includes(s.ownerId));
+      }
+      if (query.statuses?.length) {
+        surveys = surveys.filter(s => query.statuses!.includes(s.status));
+      }
+      if (query.ids?.length) {
+        surveys = surveys.filter(s => query.ids!.includes(s.id));
+      }
+      return surveys;
+    }
+  },
+
+  getSurveysPage: async (query: {
+    ownerIds?: string[];
+    statuses?: (SurveyStatus | string)[];
+    ids?: string[];
+    page?: number;
+    size?: number;
+  } = {}): Promise<PageResult<Survey>> => {
+    const page = query.page ?? 0;
+    const size = query.size ?? 12;
+    try {
+      const baseUrl = appendQuery(`${API_BASE}/surveys`, {
+        ownerIds: query.ownerIds,
+        statuses: query.statuses,
+        ids: query.ids
+      });
+      const data = await fetchPageResult<any>(baseUrl, page, size);
+      return {
+        ...data,
+        items: data.items.map(mapSurveyFromApi)
+      };
+    } catch (e) {
+      const data = localStorage.getItem('slv3_surveys');
+      let surveys: Survey[] = data ? JSON.parse(data) : [];
+      if (query.ownerIds?.length) {
+        surveys = surveys.filter(s => query.ownerIds!.includes(s.ownerId));
+      }
+      if (query.statuses?.length) {
+        surveys = surveys.filter(s => query.statuses!.includes(s.status));
+      }
+      if (query.ids?.length) {
+        surveys = surveys.filter(s => query.ids!.includes(s.id));
+      }
+      return normalizePageResult<Survey>(surveys, page, size);
     }
   },
 
@@ -163,17 +319,28 @@ export const StorageService = {
   },
 
   getSurveyById: async (id: string): Promise<Survey | undefined> => {
-    const all = await StorageService.getSurveys();
-    return all.find(s => s.id === id);
+    try {
+      const response = await fetch(`${API_BASE}/surveys/${id}`);
+      if (!response.ok) throw new Error('API Unavailable');
+      const data = await response.json();
+      return mapSurveyFromApi(data);
+    } catch (e) {
+      const all = await StorageService.getSurveys();
+      return all.find(s => s.id === id);
+    }
   },
 
   // Responses
-  getResponses: async (): Promise<SurveyResponse[]> => {
+  getResponses: async (query: {
+    pageSize?: number;
+    allPages?: boolean;
+  } = {}): Promise<SurveyResponse[]> => {
     try {
-      const response = await fetch(`${API_BASE}/responses`);
-      if (!response.ok) throw new Error('API Unavailable');
-      const data = await response.json();
-      return Array.isArray(data) ? data.map(mapResponseFromApi) : [];
+      const pageSize = query.pageSize ?? 200;
+      const data = query.allPages
+        ? await fetchAllPages<any>(`${API_BASE}/responses`, pageSize)
+        : await fetchPage<any>(appendQuery(`${API_BASE}/responses`, { page: 0, size: pageSize }));
+      return data.map(mapResponseFromApi);
     } catch (e) {
       const data = localStorage.getItem('slv3_responses');
       return data ? JSON.parse(data) : [];
@@ -213,15 +380,144 @@ export const StorageService = {
     }
   },
 
-  getResponsesBySurveyId: async (surveyId: string): Promise<SurveyResponse[]> => {
+  getResponsesBySurveyId: async (
+    surveyId: string,
+    options: { includeAnswers?: boolean; pageSize?: number; allPages?: boolean } = {}
+  ): Promise<SurveyResponse[]> => {
     try {
-      const response = await fetch(`${API_BASE}/responses/survey/${surveyId}`);
+      const baseUrl = appendQuery(`${API_BASE}/responses/survey/${surveyId}`, {
+        includeAnswers: options.includeAnswers ?? false
+      });
+      const pageSize = options.pageSize ?? 200;
+      const data = options.allPages
+        ? await fetchAllPages<any>(baseUrl, pageSize)
+        : await fetchPage<any>(appendQuery(baseUrl, { page: 0, size: pageSize }));
+      return data.map(mapResponseFromApi);
+    } catch (e) {
+      const all = await StorageService.getResponses({ allPages: true });
+      return all.filter(r => r.surveyId === surveyId);
+    }
+  },
+
+  getResponsesBySurveyIdPage: async (
+    surveyId: string,
+    options: { includeAnswers?: boolean; page?: number; size?: number } = {}
+  ): Promise<PageResult<SurveyResponse>> => {
+    const page = options.page ?? 0;
+    const size = options.size ?? 50;
+    try {
+      const baseUrl = appendQuery(`${API_BASE}/responses/survey/${surveyId}`, {
+        includeAnswers: options.includeAnswers ?? false
+      });
+      const data = await fetchPageResult<any>(baseUrl, page, size);
+      return {
+        ...data,
+        items: data.items.map(mapResponseFromApi)
+      };
+    } catch (e) {
+      const all = await StorageService.getResponses({ allPages: true });
+      const filtered = all.filter(r => r.surveyId === surveyId);
+      return normalizePageResult<SurveyResponse>(filtered, page, size);
+    }
+  },
+
+  getResponsesByUserId: async (
+    userId: string,
+    options: { includeAnswers?: boolean; pageSize?: number; allPages?: boolean } = {}
+  ): Promise<SurveyResponse[]> => {
+    try {
+      const baseUrl = appendQuery(`${API_BASE}/responses/user/${userId}`, {
+        includeAnswers: options.includeAnswers ?? false
+      });
+      const pageSize = options.pageSize ?? 200;
+      const data = options.allPages
+        ? await fetchAllPages<any>(baseUrl, pageSize)
+        : await fetchPage<any>(appendQuery(baseUrl, { page: 0, size: pageSize }));
+      return data.map(mapResponseFromApi);
+    } catch (e) {
+      const all = await StorageService.getResponses({ allPages: true });
+      return all.filter(r => r.userId === userId);
+    }
+  },
+
+  getResponsesByUserIdPage: async (
+    userId: string,
+    options: { includeAnswers?: boolean; page?: number; size?: number } = {}
+  ): Promise<PageResult<SurveyResponse>> => {
+    const page = options.page ?? 0;
+    const size = options.size ?? 20;
+    try {
+      const baseUrl = appendQuery(`${API_BASE}/responses/user/${userId}`, {
+        includeAnswers: options.includeAnswers ?? false
+      });
+      const data = await fetchPageResult<any>(baseUrl, page, size);
+      return {
+        ...data,
+        items: data.items.map(mapResponseFromApi)
+      };
+    } catch (e) {
+      const all = await StorageService.getResponses({ allPages: true });
+      const filtered = all.filter(r => r.userId === userId);
+      return normalizePageResult<SurveyResponse>(filtered, page, size);
+    }
+  },
+
+  getResponseBySurveyAndUser: async (surveyId: string, userId: string): Promise<SurveyResponse | undefined> => {
+    try {
+      const response = await fetch(`${API_BASE}/responses/survey/${surveyId}/user/${userId}`);
       if (!response.ok) throw new Error('API Unavailable');
       const data = await response.json();
-      return Array.isArray(data) ? data.map(mapResponseFromApi) : [];
+      return mapResponseFromApi(data);
     } catch (e) {
-      const all = await StorageService.getResponses();
-      return all.filter(r => r.surveyId === surveyId);
+      const all = await StorageService.getResponses({ allPages: true });
+      return all.find(r => r.surveyId === surveyId && r.userId === userId);
+    }
+  },
+
+  getResponseById: async (id: string): Promise<SurveyResponse | undefined> => {
+    try {
+      const response = await fetch(`${API_BASE}/responses/${id}`);
+      if (!response.ok) throw new Error('API Unavailable');
+      const data = await response.json();
+      return mapResponseFromApi(data);
+    } catch (e) {
+      const all = await StorageService.getResponses({ allPages: true });
+      return all.find(r => r.id === id);
+    }
+  },
+
+  getResponseCountBySurveyId: async (surveyId: string): Promise<number> => {
+    try {
+      const response = await fetch(appendQuery(`${API_BASE}/responses/count`, { surveyId }));
+      if (!response.ok) throw new Error('API Unavailable');
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) return data[0].count ?? 0;
+      return 0;
+    } catch (e) {
+      const all = await StorageService.getResponses({ allPages: true });
+      return all.filter(r => r.surveyId === surveyId).length;
+    }
+  },
+
+  getResponseCountsBySurveyIds: async (surveyIds: string[]): Promise<Record<string, number>> => {
+    if (surveyIds.length === 0) return {};
+    try {
+      const response = await fetch(appendQuery(`${API_BASE}/responses/count`, { surveyIds }));
+      if (!response.ok) throw new Error('API Unavailable');
+      const data = await response.json();
+      const counts: Record<string, number> = {};
+      (Array.isArray(data) ? data : []).forEach((item: any) => {
+        counts[item.surveyId] = item.count ?? 0;
+      });
+      return counts;
+    } catch (e) {
+      const all = await StorageService.getResponses({ allPages: true });
+      const counts: Record<string, number> = {};
+      all.forEach(r => {
+        if (!surveyIds.includes(r.surveyId)) return;
+        counts[r.surveyId] = (counts[r.surveyId] || 0) + 1;
+      });
+      return counts;
     }
   },
 

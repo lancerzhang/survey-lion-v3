@@ -88,7 +88,6 @@ const SurveyViewer: React.FC<SurveyViewerProps> = ({ user, surveyId, responseId,
 
       const s = await StorageService.getSurveyById(surveyId);
       if (s) {
-        let surveyResponses: SurveyResponse[] = [];
         let existing: SurveyResponse | undefined;
 
         if (!preview) {
@@ -118,22 +117,14 @@ const SurveyViewer: React.FC<SurveyViewerProps> = ({ user, surveyId, responseId,
             return;
           }
 
-          const needsResponses =
-            Boolean(s.config.maxParticipants) ||
-            Boolean(responseId) ||
-            (!s.config.isAnonymous && !s.config.allowMultipleSubmissions);
-          if (needsResponses) {
-            surveyResponses = await StorageService.getResponsesBySurveyId(s.id);
-          }
-
           if (responseId) {
-            existing = surveyResponses.find(r => r.id === responseId);
-            if (!existing) {
+            existing = await StorageService.getResponseById(responseId);
+            if (!existing || existing.surveyId !== s.id) {
               setError('Response not found.');
               return;
             }
           } else if (!s.config.isAnonymous && !s.config.allowMultipleSubmissions) {
-            existing = surveyResponses.find(r => r.userId === user.id);
+            existing = await StorageService.getResponseBySurveyAndUser(s.id, user.id);
           }
 
           if (existing) {
@@ -144,7 +135,7 @@ const SurveyViewer: React.FC<SurveyViewerProps> = ({ user, surveyId, responseId,
           }
 
           if (s.config.maxParticipants) {
-            const count = surveyResponses.length;
+            const count = await StorageService.getResponseCountBySurveyId(s.id);
             if (count >= s.config.maxParticipants && !existing) {
               setError(`This survey has reached its maximum participant limit of ${s.config.maxParticipants}.`);
               return;

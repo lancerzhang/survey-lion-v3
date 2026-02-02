@@ -25,7 +25,11 @@ const SurveyResults: React.FC<SurveyResultsProps> = ({ user, surveyId, navigate 
     const loadData = async () => {
       const s = await StorageService.getSurveyById(surveyId);
       if (s) setSurvey(s);
-      const resps = await StorageService.getResponsesBySurveyId(surveyId);
+      const resps = await StorageService.getResponsesBySurveyId(surveyId, {
+        includeAnswers: true,
+        allPages: true,
+        pageSize: 500
+      });
       setResponses(resps);
     };
     loadData();
