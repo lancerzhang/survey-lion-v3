@@ -18,11 +18,50 @@ const App: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Simple routing based on state
+  const parseViewFromLocation = () => {
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get('view') || 'dashboard';
+    const allowed = new Set(['dashboard', 'editor', 'viewer', 'results', 'my-surveys', 'delegates']);
+    const normalized = allowed.has(name) ? name : 'dashboard';
+    const id = params.get('id') || undefined;
+    const responseId = params.get('responseId') || undefined;
+    const preview = params.get('preview') === '1' || params.get('preview') === 'true';
+    const from = params.get('from') || undefined;
+    return { name: normalized, params: { id, responseId, preview, from } };
+  };
+
+  const buildUrlForView = (name: string, params?: any) => {
+    const url = new URL(window.location.href);
+    url.search = '';
+    if (name === 'dashboard') return url.pathname;
+
+    const search = new URLSearchParams();
+    search.set('view', name);
+    if (params?.id) search.set('id', params.id);
+    if (params?.responseId) search.set('responseId', params.responseId);
+    if (params?.preview) search.set('preview', '1');
+    if (params?.from) search.set('from', params.from);
+    url.search = search.toString();
+    return `${url.pathname}${url.search}`;
+  };
+
   const navigate = (name: string, params?: any) => {
     setView({ name, params });
+    const nextUrl = buildUrlForView(name, params);
+    window.history.pushState({}, '', nextUrl);
   };
 
   const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
+
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const nextView = parseViewFromLocation();
+      setView(nextView);
+    };
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, []);
 
   const renderContent = () => {
     switch (view.name) {
@@ -31,7 +70,16 @@ const App: React.FC = () => {
       case 'editor':
         return <SurveyEditor user={currentUser} surveyId={view.params?.id} navigate={navigate} />;
       case 'viewer':
-        return <SurveyViewer user={currentUser} surveyId={view.params?.id} navigate={navigate} preview={view.params?.preview} />;
+        return (
+          <SurveyViewer
+            user={currentUser}
+            surveyId={view.params?.id}
+            responseId={view.params?.responseId}
+            from={view.params?.from}
+            navigate={navigate}
+            preview={view.params?.preview}
+          />
+        );
       case 'results':
         return <SurveyResults user={currentUser} surveyId={view.params?.id} navigate={navigate} />;
       case 'my-surveys':

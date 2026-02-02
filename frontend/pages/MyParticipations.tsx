@@ -66,10 +66,10 @@ const MyParticipations: React.FC<MyParticipationsProps> = ({ user, navigate }) =
                   </td>
                   <td className="px-6 py-4">
                     <button 
-                      onClick={() => navigate('viewer', { id: res.surveyId })}
+                      onClick={() => navigate('viewer', { id: res.surveyId, responseId: res.id, from: 'my-surveys' })}
                       className="text-indigo-600 font-medium hover:underline text-sm"
                     >
-                      View/Update
+                      {res.survey?.config.allowEditAfterSubmit ? 'View/Update' : 'View'}
                     </button>
                   </td>
                 </tr>

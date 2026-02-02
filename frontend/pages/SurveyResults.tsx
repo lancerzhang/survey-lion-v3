@@ -4,6 +4,7 @@ import { Survey, SurveyResponse, User, QuestionType } from '../types';
 import { StorageService } from '../services/storageService';
 import { ICONS, MOCK_USERS } from '../constants.tsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import * as XLSX from 'xlsx';
 
 interface SurveyResultsProps {
   user: User;
@@ -77,30 +78,33 @@ const SurveyResults: React.FC<SurveyResultsProps> = ({ user, surveyId, navigate 
     }, 2000);
   };
 
-  const exportToExcel = () => {
+  const exportToXlsx = () => {
     if (!survey || responses.length === 0) return;
 
-    // Build CSV Content
     const headers = ['Response ID', 'Timestamp', 'User', ...survey.questions.map(q => q.title)];
-    const rows = responses.map(r => {
-      const row = [
-        r.id,
-        new Date(r.submittedAt).toISOString(),
-        survey.config.isAnonymous ? 'Anonymous' : (MOCK_USERS.find(u => u.id === r.userId)?.name || r.userId),
-        ...survey.questions.map(q => {
-          const ans = r.answers[q.id];
-          return Array.isArray(ans) ? ans.join('; ') : (ans || '');
-        })
-      ];
-      return row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',');
-    });
+    const rows = responses.map(r => ([
+      r.id,
+      new Date(r.submittedAt).toISOString(),
+      survey.config.isAnonymous ? 'Anonymous' : (MOCK_USERS.find(u => u.id === r.userId)?.name || r.userId),
+      ...survey.questions.map(q => {
+        const ans = r.answers[q.id];
+        if (Array.isArray(ans)) return ans.join('; ');
+        if (ans === undefined || ans === null) return '';
+        return String(ans);
+      })
+    ]));
 
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Results');
+    const workbookOut = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([workbookOut], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `${survey.title.replace(/\s+/g, '_')}_Results.csv`);
+    link.setAttribute("download", `${survey.title.replace(/\s+/g, '_')}_Results.xlsx`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -121,9 +125,9 @@ const SurveyResults: React.FC<SurveyResultsProps> = ({ user, surveyId, navigate 
           </div>
         </div>
         <div className="flex space-x-3">
-          <button onClick={exportToExcel} className="inline-flex items-center px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
+          <button onClick={exportToXlsx} className="inline-flex items-center px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">
             <ICONS.Download />
-            <span className="ml-2">Export CSV</span>
+            <span className="ml-2">Export XLSX</span>
           </button>
           <button onClick={handleLottery} className="inline-flex items-center px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium">
             <ICONS.Gift />

@@ -68,7 +68,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
       questions: template?.questions || [],
       config: {
         isAnonymous: false,
-        allowEditAfterSubmit: true
+        allowEditAfterSubmit: false,
+        allowMultipleSubmissions: false,
+        startTime: '',
+        endTime: '',
+        maxParticipants: undefined
       },
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -98,7 +102,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
                 <h3 className="text-2xl font-bold text-gray-900">Choose a Template</h3>
                 <p className="text-gray-500">Get started quickly with a pre-built survey structure.</p>
               </div>
-              <button onClick={() => setShowTemplateModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition">&times;</button>
+              <button
+                onClick={() => setShowTemplateModal(false)}
+                title="Close"
+                className="p-2 hover:bg-gray-200 rounded-full transition"
+              >
+                &times;
+              </button>
             </div>
             <div className="p-8 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <button 
@@ -171,8 +181,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
                   {survey.status}
                 </span>
                 <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition">
-                  <button onClick={() => handleArchive(survey)} title="Archive" className="p-1.5 hover:bg-gray-100 rounded text-gray-500"><ICONS.Archive /></button>
-                  <button onClick={() => handleDelete(survey.id)} title="Delete" className="p-1.5 hover:bg-red-50 rounded text-red-500"><ICONS.Trash /></button>
+                  <button
+                    onClick={() => handleArchive(survey)}
+                    title="Archive"
+                    className="p-1.5 hover:bg-gray-100 rounded text-gray-500"
+                  >
+                    <ICONS.Archive />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(survey.id)}
+                    title="Delete"
+                    className="p-1.5 hover:bg-red-50 rounded text-red-500"
+                  >
+                    <ICONS.Trash />
+                  </button>
                 </div>
               </div>
 
@@ -188,9 +210,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user, navigate, refresh }) => {
                 </div>
                 
                 <div className="flex space-x-1">
-                  <button onClick={() => navigate('editor', { id: survey.id })} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Edit"><ICONS.Edit /></button>
-                  <button onClick={() => navigate('results', { id: survey.id })} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Results"><ICONS.Chart /></button>
-                  <button onClick={() => navigate('viewer', { id: survey.id })} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="View"><ICONS.Eye /></button>
+                  <button
+                    onClick={() => navigate('editor', { id: survey.id })}
+                    className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                    title="Edit"
+                  >
+                    <ICONS.Edit />
+                  </button>
+                  <button
+                    onClick={() => navigate('results', { id: survey.id })}
+                    className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                    title="Results"
+                  >
+                    <ICONS.Chart />
+                  </button>
+                  <button
+                    onClick={() => navigate('viewer', { id: survey.id })}
+                    className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                    title="View"
+                  >
+                    <ICONS.Eye />
+                  </button>
                 </div>
               </div>
             </div>

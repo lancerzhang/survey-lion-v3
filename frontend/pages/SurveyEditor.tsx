@@ -21,7 +21,7 @@ const SurveyEditor: React.FC<SurveyEditorProps> = ({ user, surveyId, navigate })
     questions: [],
     config: {
       isAnonymous: false,
-      allowEditAfterSubmit: true,
+      allowEditAfterSubmit: false,
       allowMultipleSubmissions: false,
       startTime: '',
       endTime: '',
@@ -36,6 +36,24 @@ const SurveyEditor: React.FC<SurveyEditorProps> = ({ user, surveyId, navigate })
   const [bulkPasteTarget, setBulkPasteTarget] = useState<string | null>(null);
   const [bulkText, setBulkText] = useState('');
   const lastSavedRef = useRef(Date.now());
+  const [shareCopied, setShareCopied] = useState(false);
+
+  const getShareUrl = () => {
+    const base = `${window.location.origin}${window.location.pathname}`;
+    const params = new URLSearchParams({ view: 'viewer', id: survey.id });
+    return `${base}?${params.toString()}`;
+  };
+
+  const copyShareLink = async () => {
+    const url = getShareUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1500);
+    } catch {
+      window.prompt('Copy this link:', url);
+    }
+  };
 
   useEffect(() => {
     // FIX: StorageService.getSurveyById is asynchronous.
@@ -138,8 +156,18 @@ const SurveyEditor: React.FC<SurveyEditorProps> = ({ user, surveyId, navigate })
           <span className="text-xs text-gray-400">
             {saving ? 'Saving...' : 'All changes saved'}
           </span>
+          <button
+            onClick={copyShareLink}
+            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium flex items-center"
+          >
+            <ICONS.Share />
+            <span className="ml-2">{shareCopied ? 'Copied' : 'Copy Link'}</span>
+          </button>
           <button 
-            onClick={() => navigate('viewer', { id: survey.id, preview: true })}
+            onClick={async () => {
+              await StorageService.saveSurvey(survey);
+              navigate('viewer', { id: survey.id, preview: true });
+            }}
             className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium flex items-center"
           >
             <ICONS.Eye />
@@ -348,6 +376,18 @@ const SurveyEditor: React.FC<SurveyEditorProps> = ({ user, surveyId, navigate })
                       type="checkbox" 
                       checked={survey.config.allowMultipleSubmissions}
                       onChange={e => setSurvey({ ...survey, config: { ...survey.config, allowMultipleSubmissions: e.target.checked } })}
+                      className="w-5 h-5 text-indigo-600 rounded cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Allow Edit After Submit</p>
+                      <p className="text-xs text-gray-500">Let users update their submitted responses.</p>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={survey.config.allowEditAfterSubmit}
+                      onChange={e => setSurvey({ ...survey, config: { ...survey.config, allowEditAfterSubmit: e.target.checked } })}
                       className="w-5 h-5 text-indigo-600 rounded cursor-pointer"
                     />
                   </div>
