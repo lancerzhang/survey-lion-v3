@@ -12,6 +12,57 @@ CREATE TABLE IF NOT EXISTS users (
   created_at timestamp NOT NULL
 );
 
+-- Ensure schema exists even if the app hasn't been started yet
+CREATE TABLE IF NOT EXISTS surveys (
+  id text PRIMARY KEY,
+  owner_id text,
+  title text,
+  description text,
+  status text,
+  is_anonymous boolean,
+  allow_edit_after_submit boolean,
+  allow_multiple_submissions boolean,
+  start_time timestamp,
+  end_time timestamp,
+  max_participants integer,
+  created_at timestamp,
+  updated_at timestamp
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+  id text PRIMARY KEY,
+  type text,
+  title text,
+  description text,
+  mandatory boolean,
+  has_other boolean,
+  other_label text,
+  min_select integer,
+  max_select integer,
+  survey_id text REFERENCES surveys(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS survey_options (
+  id text PRIMARY KEY,
+  text text,
+  skip_to_question_id text,
+  question_id text REFERENCES questions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS survey_responses (
+  id text PRIMARY KEY,
+  survey_id text REFERENCES surveys(id) ON DELETE CASCADE,
+  user_id text,
+  submitted_at timestamp
+);
+
+CREATE TABLE IF NOT EXISTS response_answers (
+  response_id text REFERENCES survey_responses(id) ON DELETE CASCADE,
+  question_id text REFERENCES questions(id) ON DELETE CASCADE,
+  answer text,
+  PRIMARY KEY (response_id, question_id)
+);
+
 -- Clean existing data (order matters if FK constraints exist)
 TRUNCATE TABLE response_answers, survey_responses, survey_options, questions, surveys RESTART IDENTITY CASCADE;
 TRUNCATE TABLE users RESTART IDENTITY CASCADE;
@@ -155,7 +206,7 @@ BEGIN
     CASE q.type
       WHEN 'RATING' THEN to_jsonb((floor(random() * 5) + 1)::int)::text
       WHEN 'SINGLE_CHOICE' THEN (
-        SELECT to_jsonb(o.id)::text
+        SELECT to_jsonb(o.text)::text
         FROM survey_options o
         WHERE o.question_id = q.id
         ORDER BY random()
@@ -163,14 +214,14 @@ BEGIN
       )
       WHEN 'MULTIPLE_CHOICE' THEN (
         SELECT to_jsonb(ARRAY(
-          SELECT o.id
+          SELECT o.text
           FROM survey_options o
           WHERE o.question_id = q.id
           ORDER BY random()
           LIMIT (floor(random() * 3) + 1)::int
-        ))::text
+        )::text[])::text
       )
-      ELSE to_jsonb('')::text
+      ELSE to_jsonb(''::text)::text
     END
   FROM survey_responses r
   JOIN questions q ON q.survey_id = r.survey_id;

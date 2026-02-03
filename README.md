@@ -40,11 +40,39 @@ The server starts at `http://localhost:8080`.
 - **Development**: H2 in-memory database
 - **Console**: `http://localhost:8080/h2-console`
 - **JDBC URL**: `jdbc:h2:mem:surveydb`
+- **PostgreSQL (Docker + dev profile)**:
+  1. Start a local Postgres container:
+      ```bash
+      docker run --name surveylion-pg \
+        -e POSTGRES_DB=surveylion \
+        -e POSTGRES_USER=postgres \
+        -e POSTGRES_PASSWORD=postgres \
+        -p 5432:5432 \
+        -v surveylion_pg:/var/lib/postgresql/data \
+        -d postgres:16
+      ```
+  2. Run Spring Boot with the `dev` profile:
+      ```bash
+      cd backend
+      SPRING_PROFILES_ACTIVE=dev mvn spring-boot:run
+      ```
+      Or:
+      ```bash
+      mvn spring-boot:run -Dspring-boot.run.profiles=dev
+      ```
+      Profile config lives in `backend/src/main/resources/application-dev.properties`.
+      If you prefer env overrides, also set `SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver`.
+  3. Seed performance data:
+      ```bash
+      docker exec -i surveylion-pg psql -U postgres -d surveylion < backend/scripts/seed_perf.sql
+      ```
+      *Note: the seed script truncates the survey tables before inserting data.*
 
 ## Performance Seed (PostgreSQL)
 The performance seed script lives at `backend/scripts/seed_perf.sql`. It truncates
 survey tables and generates ~5000 users, 2-4 surveys per user, 4-6 questions per
-survey, and 8-12 responses per survey.
+survey, and 8-12 responses per survey. It also creates the schema if the tables
+do not exist yet.
 
 Usage (PostgreSQL):
 ```bash
